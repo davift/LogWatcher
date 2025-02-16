@@ -1,0 +1,44 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "LogAnalysisRecord",
+  "type": "object",
+  "properties": {
+    "severity": {
+      "type": "string",
+      "enum": ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+      "description": "The log level reported by the source."
+    },
+    "original_message": {
+      "type": "string",
+      "description": "The raw, unmodified log text."
+    },
+    "pattern_message": {
+      "type": "string",
+      "description": "Regex pattern used to match occurrences."
+    },
+    "analysis": {
+      "type": "object",
+      "properties": {
+        "confidence_score": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10,
+          "description": "Confidence score between 0 and 10."
+        },
+        "reasoning": {
+          "type": "string",
+          "description": "Brief explanation for the classification."
+        },
+        "detected_entities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "List of key entities found (IPs, usernames, etc)."
+        }
+      },
+      "required": ["confidence_score", "reasoning"]
+    }
+  },
+  "required": ["severity", "original_message", "pattern_message", "analysis"]
+}
