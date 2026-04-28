@@ -4,6 +4,8 @@ import json
 import re
 import sys
 import signal
+import time
+import atexit
 import requests
 from jsonschema import validate, ValidationError
 import os
@@ -11,15 +13,19 @@ import dotenv
 dotenv.load_dotenv()
 
 OPENAI_KEY = os.getenv("OPENAI_KEY", "")
+ANTHROPIC_KEY = os.getenv("ANTHROPIC_KEY", "")
 
-DEBUGGING = True
-SYSTEMD = True
-MAX_QUEUE_SIZE = 100
+DEBUGGING = int(os.getenv("DEBUGGING", 0))
+SYSTEMD = int(os.getenv("SYSTEMD", 0))
+LOG_HEADER_RE = re.compile(r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3} ')
+LOGID_RE = re.compile(r'\(logid:[0-9a-z]*\) ')
+MAX_QUEUE_SIZE = int(os.getenv("MAX_QUEUE_SIZE", 100))
+FLUSH_INTERVAL = int(os.getenv("FLUSH_INTERVAL", 15))
 
-OLLAMA = True
-OLLAMA_URL = "http://192.168.1.101:11434/api/generate"
-MODELS = [
-    # Recomment options.
+PROVIDER = os.getenv("PROVIDER", "ollama")
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://192.168.1.101:11434/api/generate")
+OLLAMA_MODELS = [
+    # Recommended options.
     'hf.co/Nerdsking/nerdsking-python-coder-3B-i:Q8_0',   #0 Best Regex patterns but almost all there classified as INFO. 12 learned patterns.
     'yi-coder:9b',                                        #1 Best classification results. 12 learned patterns.
     'qwen2.5-coder:7b',                                   #2 Second best classification results. 12 learned patterns.
@@ -32,12 +38,28 @@ MODELS = [
     'qwen2.5-coder:1.5b-base',                            #7 So bad that can't return most JSON with proper schema or even a valid JSON format. 16 learned patterns.
     'deepseek-coder:1.3b',                                #8 So bad that can't return any JSON with proper schema or even a valid JSON format. 0 learned patterns.
 ]
+OPENAI_MODELS = [
+    'gpt-5.4-mini',      #0 Cheaper but not really useful.
+    'gpt-5.4',           #1 Intermediate.
+    'gpt-5.5',           #2 Expensive but slower.
+]
+ANTHROPIC_MODELS = [
+    'claude-haiku-4-5',  #0 Cheaper and faster.
+    'claude-sonnet-4-6', #1 Intermediate.
+    'claude-opus-4-7',   #2 Expensive but slower.
+]
 INDEX=0 if len(sys.argv) <= 1 else int(sys.argv[1])
-MODEL = MODELS[INDEX]
-KNOWN_PATTERNS_FILE = f"known.jsonl"
-# Use the following if you wan to benchmark models.
-# KNOWN_PATTERNS_FILE = f"known_model_{INDEX}.jsonl"
+MODEL = OLLAMA_MODELS[INDEX]
+OPENAI_MODEL = OPENAI_MODELS[INDEX]
+ANTHROPIC_MODEL = ANTHROPIC_MODELS[INDEX]
+
+KNOWN_PATTERNS_FILE = "known.jsonl"
 SCHEMA_FILE = 'schema.json'
+
+modified = False
+last_write = time.time()
+lines_processed = 0
+pattern_match_times = {}
 
 class Colors:
     CRITICAL = '\033[91m'    # Red
@@ -55,6 +77,14 @@ def get_color(severity):
         "INFO": Colors.INFO
     }
     return mapping.get(severity.upper(), Colors.RESET)
+
+def print_timing_summary():
+    if not pattern_match_times:
+        return
+    sorted_times = sorted(pattern_match_times.items(), key=lambda x: x[1]["total"], reverse=True)
+    print("\n\nTop #20 Pattern Matching Wasted Time:\n")
+    for entry_id, times in sorted_times[:20]:
+        print(f"{Colors.DEBUG}[{entry_id}]\ttotal={times['total']:.0f}s\tlast={times['last']*1000:.3f}ms{Colors.RESET}")
 
 def signal_handler(sig, frame):
     print(f"\n{Colors.WARNING} [!] Interrupt received. Shutting down gracefully...{Colors.RESET}")
@@ -88,33 +118,43 @@ def load_known_patterns():
         debug_print(f"Loaded {len(patterns)} known patterns.")
     except FileNotFoundError:
         debug_print("No known patterns file found. Starting fresh.")
+    patterns.sort(key=lambda p: p.get("count", 0), reverse=True)
     return patterns
 
-def save_jsonl(entry, filename):
-    debug_print(f"Appending new pattern ID {entry['id']}")
-    with open(filename, 'a', encoding='utf-8') as f:
-        f.write(json.dumps(entry) + '\n')
-
-def update_pattern_count(pattern_id, filename):
+def write_knowledge_base(patterns, filename):
+    global modified, last_write
+    sorted_for_disk = sorted(patterns, key=lambda p: p.get("original_message", ""))
     try:
-        with open(filename, 'r', encoding='utf-8') as f:
-            lines = [json.loads(l) for l in f if l.strip()]
-
-        for entry in lines:
-            if entry.get("id") == pattern_id:
-                entry["count"] += 1
-                break
-
         with open(filename, 'w', encoding='utf-8') as f:
-            for entry in lines:
+            for entry in sorted_for_disk:
                 f.write(json.dumps(entry) + '\n')
+        debug_print(f"Knowledge base flushed to {filename} ({len(patterns)} patterns)")
     except Exception as e:
-        debug_print(f"Failed updating count for id {pattern_id}: {e}")
+        debug_print(f"Failed writing knowledge base: {e}")
+    modified = False
+    last_write = time.time()
+
+def maybe_flush(patterns, filename):
+    global modified, last_write
+    if modified and (time.time() - last_write >= FLUSH_INTERVAL):
+        write_knowledge_base(patterns, filename)
 
 def get_next_id(patterns):
     if not patterns:
         return 1
     return max(p.get("id", 0) for p in patterns) + 1
+
+def write_offline_log(log_line):
+    print(f"{Colors.WARNING} [!] OFFLINE MODE{Colors.RESET}")
+    with open("offline.log", "a", encoding="utf-8") as f:
+        f.write(log_line + "\n")
+
+def is_in_offline_log(log_line):
+    try:
+        with open("offline.log", "r", encoding="utf-8") as f:
+            return any(line.strip() == log_line for line in f)
+    except FileNotFoundError:
+        return False
 
 def ask_ai(log_message, schema_obj):
     prompt = f"""
@@ -158,9 +198,9 @@ def ask_ai(log_message, schema_obj):
     """
     
     try:
-        debug_print("Asking AI...\n")
+        print("Asking AI...\n")
 
-        if OLLAMA:
+        if PROVIDER == "ollama":
             response = requests.post(
                 OLLAMA_URL,
                 json={
@@ -171,44 +211,71 @@ def ask_ai(log_message, schema_obj):
                 },
                 timeout=180
             )
-            if DEBUGGING:
-                print(f"[DEBUG] REQUEST: \n\n{log_message}\n")
-                print(f"[DEBUG] RESPONSE ({response.elapsed.total_seconds():.0f}s): \n\n{response.json()['response']}\n")
+            debug_print(f"[DEBUG] REQUEST: \n\n{log_message}\n")
+            debug_print(f"[DEBUG] RESPONSE ({response.elapsed.total_seconds():.0f}s): \n\n{response.json()['response']}\n")
 
             response.raise_for_status()
             ai_data = json.loads(response.json()['response'])
-        else:
+        elif PROVIDER == "openai":
             if not OPENAI_KEY:
                 print(f"{Colors.CRITICAL}CRITICAL: OPENAI_KEY not set.{Colors.RESET}")
                 return None
-            openai_url = "https://api.openai.com/v1/chat/completions"
+            openai_url = "https://api.openai.com/v1/responses"
             headers = {
                 "Authorization": f"Bearer {OPENAI_KEY}",
                 "Content-Type": "application/json"
             }
-            openai_model = "gpt-3.5-turbo"
             payload = {
-                "model": openai_model,
-                "messages": [
+                "model": OPENAI_MODEL,
+                "input": [
                     {"role": "system", "content": prompt},
                     {"role": "user", "content": f"Log Line: {log_message}"}
                 ],
-                "temperature": 0.2,
-                "max_tokens": 1024
+                "max_output_tokens": 20480
             }
             response = requests.post(openai_url, headers=headers, json=payload, timeout=180)
             response.raise_for_status()
             result = response.json()
-            if DEBUGGING:
-                print(f"[DEBUG] OPENAI REQUEST: \n\n{log_message}\n")
-                print(f"[DEBUG] OPENAI RESPONSE: \n\n{result}\n")
-            content = result["choices"][0]["message"]["content"]
-            content = content.strip()
+            debug_print(f"[DEBUG] OPENAI REQUEST: \n\n{log_message}\n")
+            debug_print(f"[DEBUG] OPENAI RESPONSE: \n\n{result}\n")
+            content = result["output"][0]["content"][0]["text"].strip()
             if content.startswith("```json"):
                 content = content[7:].strip()
                 if content.endswith("```"):
                     content = content[:-3].strip()
             ai_data = json.loads(content)
+        elif PROVIDER == "anthropic":
+            if not ANTHROPIC_KEY:
+                print(f"{Colors.CRITICAL}CRITICAL: ANTHROPIC_KEY not set.{Colors.RESET}")
+                return None
+            anthropic_url = "https://api.anthropic.com/v1/messages"
+            headers = {
+                "x-api-key": ANTHROPIC_KEY,
+                "anthropic-version": "2023-06-01",
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "model": ANTHROPIC_MODEL,
+                "max_tokens": 20480,
+                "system": prompt,
+                "messages": [
+                    {"role": "user", "content": f"Log Line: {log_message}"}
+                ]
+            }
+            response = requests.post(anthropic_url, headers=headers, json=payload, timeout=180)
+            response.raise_for_status()
+            result = response.json()
+            debug_print(f"[DEBUG] ANTHROPIC REQUEST: \n\n{log_message}\n")
+            debug_print(f"[DEBUG] ANTHROPIC RESPONSE: \n\n{result}\n")
+            content = result["content"][0]["text"].strip()
+            if content.startswith("```json"):
+                content = content[7:].strip()
+                if content.endswith("```"):
+                    content = content[:-3].strip()
+            ai_data = json.loads(content)
+        else:
+            write_offline_log(log_message)
+            return None
 
         debug_print("Validating response against schema.json")
         if schema_obj:
@@ -218,57 +285,102 @@ def ask_ai(log_message, schema_obj):
         print(f"{Colors.ERROR}[ERROR] AI JSON failed validation: {ve.message}{Colors.RESET}")
         return None
     except Exception as e:
-        print(f"{Colors.ERROR}[ERROR] AI communication failure: {e}{Colors.RESET}")
+        msg = "AI communication failure:"
+        e_str = str(e)
+        if "429" in e_str or ("400" in e_str and "anthropic.com" in e_str):
+            msg += " (quota may have exceeded)"
+        print(f"{Colors.ERROR}[ERROR] {msg} {e}{Colors.RESET}")
+        write_offline_log(log_message)
         return None
 
 def analyze_and_process_line(log_line, knowledge_base, schema_obj):
+    global lines_processed
     if not log_line:
         return
 
+    content = LOG_HEADER_RE.sub('', log_line).strip()
+    if not content:
+        return
+
+    lines_processed += 1
+    if not DEBUGGING and lines_processed % 10000 == 0:
+        print(f"{Colors.DEBUG}[INFO] Lines processed: {lines_processed}{Colors.RESET}", flush=True)
+
     match_found = None
     for entry_kb in knowledge_base:
-        if re.search(entry_kb['pattern_message'], log_line):
-            match_found = entry_kb
-            break
+        try:
+            t0 = time.perf_counter()
+            matched = re.search(entry_kb['pattern_message'], content)
+            elapsed = time.perf_counter() - t0
+            entry_id = entry_kb.get('id', 0)
+            prev = pattern_match_times.get(entry_id, {"total": 0.0, "last": 0.0})
+            pattern_match_times[entry_id] = {"total": prev["total"] + elapsed, "last": elapsed}
+            if matched:
+                match_found = entry_kb
+                break
+        except re.error as e:
+            print(f"[WARN] Invalid regex in entry id={entry_kb.get('id')}: {e}", flush=True)
+            continue
 
     if match_found:
         match_found["count"] += 1
-        update_pattern_count(match_found["id"], KNOWN_PATTERNS_FILE)
+        match_found["original_message"] = content
+        knowledge_base.sort(key=lambda p: p.get("count", 0), reverse=True)
+        global modified
+        modified = True
         color = get_color(match_found['severity'])
-        print(f"{color}[CACHED: {match_found['severity']}] {log_line}{Colors.RESET}")
+        debug_print(f"{color}[CACHED: {match_found['severity']}] {content}{Colors.RESET}")
     else:
         debug_print("No match in knowledge base.")
-        full_ai_response = ask_ai(log_line, schema_obj)
+        if is_in_offline_log(content):
+            debug_print("Already queued in offline.log, skipping AI.")
+            return
+
+        logid_match = LOGID_RE.search(content)
+        if logid_match:
+            content_for_ai = content[logid_match.end():]
+            logid_stripped = True
+        else:
+            content_for_ai = content
+            logid_stripped = False
+
+        full_ai_response = ask_ai(content_for_ai, schema_obj)
 
         if full_ai_response:
             severity = full_ai_response.get("severity", "INFO")
             pattern = full_ai_response.get("pattern_message", "")
 
+            if logid_stripped and pattern.startswith("^"):
+                pattern = pattern[1:]
+
             try:
-                if not pattern or not re.search(pattern, log_line):
-                    pattern = re.escape(log_line)
+                if not pattern or not re.search(pattern, content):
+                    pattern = re.escape(content)
             except re.error:
-                pattern = re.escape(log_line)
-            
+                pattern = re.escape(content)
+
             new_entry = {
                 "id": get_next_id(knowledge_base),
                 "count": 1,
                 "severity": severity,
-                "original_message": log_line,
+                "original_message": content,
                 "pattern_message": pattern,
                 "analysis": full_ai_response.get('analysis', {})
             }
 
             color = get_color(severity)
-            print(f"{color}[NEW: {severity}] {log_line}{Colors.RESET}")
-            save_jsonl(new_entry, KNOWN_PATTERNS_FILE)
+            print(f"{color}[NEW: {severity}] {content}{Colors.RESET}")
             knowledge_base.append(new_entry)
+            modified = True
         else:
             debug_print("AI processing failed. Log ignored.")
 
 def process_journal_logs():
     knowledge_base = load_known_patterns()
     schema_obj = load_json_schema()
+
+    atexit.register(lambda: write_knowledge_base(knowledge_base, KNOWN_PATTERNS_FILE) if modified else None)
+    atexit.register(print_timing_summary)
 
     if SYSTEMD:
         debug_print("Opening systemd journal reader...")
@@ -283,11 +395,23 @@ def process_journal_logs():
         j.seek_tail()
         j.get_previous()
         
-        print(f"{Colors.INFO}Parser Active (Monitoring SSH via systemd-python). Press Ctrl+C to stop.{Colors.RESET}")
-        
+        print(f"{Colors.INFO}Parser Active (via systemd-python). Press Ctrl+C to stop.{Colors.RESET}")
+
         while True:
-            select.select([j], [], [])
-            j.process()
+            ready = select.select([j], [], [], 5.0)
+            if not ready[0]:
+                debug_print("Waiting for journal events...")
+                maybe_flush(knowledge_base, KNOWN_PATTERNS_FILE)
+                continue
+
+            change_type = j.process()
+            if change_type == journal.INVALIDATE:
+                j.seek_tail()
+                j.get_previous()
+                continue
+            if change_type != journal.APPEND:
+                continue
+
             pending = []
             for entry in j:
                 log_line = entry.get("MESSAGE", "").strip()
@@ -301,25 +425,39 @@ def process_journal_logs():
 
             for log_line in pending:
                 analyze_and_process_line(log_line, knowledge_base, schema_obj)
+            maybe_flush(knowledge_base, KNOWN_PATTERNS_FILE)
     else:
-        debug_print("Opening journalctl stream...")
+        # When SYSTEMD is set to False.
+        debug_print("Opening stream...")
         import subprocess
-        cmd = ["stdbuf", "-oL", "journalctl", "-u", "ssh", "-n", "0", "-f", "--output", "cat"]
+
+        ##
+        ## If not using the systemd-python approach, customize the command below to stream logs from any source.
+        ##
+
+        # Example for streaming via subprocess.
+        # cmd = ["stdbuf", "-oL", "journalctl", "-u", "ssh", "-n", "0", "-f", "--output", "cat"]
+        
+        # Basic live monitoring of any log file.
         # cmd = ["tail", "-f", "/var/log/auth.log"]
+        
+        # Learning patterns from a static file instead of live monitoring.
+        cmd = ["cat", "log.log"]
 
         try:
             process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, bufsize=1)
         except FileNotFoundError:
-            print(f"{Colors.CRITICAL}CRITICAL: journalctl not found.{Colors.RESET}")
+            print(f"{Colors.CRITICAL}CRITICAL: streaming failed or command not found.{Colors.RESET}")
             return
 
-        print(f"{Colors.INFO}Parser Active (Monitoring SSH via subprocess). Press Ctrl+C to stop.{Colors.RESET}")
+        print(f"{Colors.INFO}Parser Active (streaming via subprocess). Press Ctrl+C to stop.{Colors.RESET}")
 
         while True:
             line = process.stdout.readline()
             if not line:
                 break
             analyze_and_process_line(line.strip(), knowledge_base, schema_obj)
+            maybe_flush(knowledge_base, KNOWN_PATTERNS_FILE)
 
 if __name__ == "__main__":
     process_journal_logs()

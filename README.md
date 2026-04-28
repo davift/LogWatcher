@@ -24,14 +24,45 @@ While it is recommended to watch outputs of a systemd unity (services or timers)
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install requests jsonschema systemd-python flask
+pip install requests jsonschema systemd-python dotenv flask prometheus-client
 ```
 
 ## Usage
 
+Make sure the file `.env` is set and configured. Copy the template file `_env`.
+
 ```bash
-python watcher.py <model_index>
+python3 watcher.py <model_index>
 ```
+
+```bash
+python3 editor.py
+```
+
+## Metrics (Prometheus)
+
+`exporter.py` exposes summarized knowledge-base metrics for each severity type.
+It re-reads `known.jsonl` on every scrape, so it stays in sync with whatever
+`watcher.py` flushes to disk — no shared state with the watcher process.
+
+```bash
+python3 exporter.py
+# then scrape:
+curl -s http://localhost:9847/metrics | grep logwatcher_
+```
+
+| Metric | Type | Description |
+|---|---|---|
+| `logwatcher_log_events_total{severity}` | counter | Total log lines matched, summed per severity |
+| `logwatcher_known_patterns{severity}` | gauge | Distinct learned patterns per severity |
+| `logwatcher_known_patterns_total` | gauge | Total distinct patterns in the KB |
+| `logwatcher_log_events_grand_total` | gauge | Total matched lines across all severities |
+| `logwatcher_kb_malformed_lines` | gauge | Unparseable KB lines on the last scrape |
+| `logwatcher_kb_readable` | gauge | `1` if the KB file was readable, else `0` |
+| `logwatcher_kb_last_scrape_timestamp_seconds` | gauge | Unix time of the last scrape |
+
+Configurable via `.env`: `EXPORTER_PORT` (default `9847`), `EXPORTER_ADDR`
+(default `0.0.0.0`), `KNOWN_PATTERNS_FILE` (default `known.jsonl`).
 
 ## Configuration
 
@@ -65,4 +96,12 @@ bash tester.sh
 ![unknown pattern](https://github.com/davift/LogWatcher/blob/main/image03.png)
 
 ![known patterns](https://github.com/davift/LogWatcher/blob/main/image04.png)
+
+## Bonus
+
+Trick to reset all counter in the KB to zero.
+
+```bash
+jq -c '.count = 0' known.jsonl > known.tmp && mv known.tmp known.jsonl
+```
 

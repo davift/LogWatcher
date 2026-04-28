@@ -1,3 +1,10 @@
 .env
 .venv
+.claude*
+.openai*
+tester/*.log
 known.jsonl
+log.log
+offline.log
+__pycache__/
+

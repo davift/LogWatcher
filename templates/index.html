@@ -14,8 +14,8 @@
     --border: #252a38;
     --border2: #2e3447;
     --text: #c8d0e4;
-    --text-dim: #5c6580;
-    --text-muted: #3a3f55;
+    --text-dim: #c8d0e4;
+    --text-muted: #c8d0e4;
     --accent: #4f7fff;
     --accent-glow: rgba(79,127,255,0.18);
     --green: #3ecf8e;
@@ -34,7 +34,8 @@
     color: var(--text);
     font-family: var(--mono);
     font-size: 13px;
-    min-height: 100vh;
+    height: 100vh;
+    overflow: hidden;
     display: flex;
     flex-direction: column;
   }
@@ -66,18 +67,6 @@
 
   .header-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
 
-  #save-status {
-    font-size: 11px; color: var(--text-dim);
-    opacity: 0; transition: opacity 0.4s;
-    display: flex; align-items: center; gap: 6px;
-  }
-  #save-status.show { opacity: 1; }
-  #save-status .dot {
-    width: 7px; height: 7px; border-radius: 50%; background: var(--green); flex-shrink: 0;
-    animation: pulse 1.5s ease-in-out infinite;
-  }
-  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
-
   /* ── Toolbar ── */
   .toolbar {
     padding: 14px 32px;
@@ -98,6 +87,14 @@
   .sort-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; box-shadow: 0 0 14px var(--accent-glow); }
   .sort-arrow { font-size: 10px; opacity: 0.7; }
 
+  .search-input {
+    background: var(--surface2); border: 1px solid var(--border2); color: var(--text);
+    padding: 6px 12px; border-radius: 6px; font-family: var(--mono); font-size: 11px;
+    width: 200px; transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .search-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+  .search-input::placeholder { color: var(--text-muted); }
+
   .filter-group { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 
   .sev-filter {
@@ -108,14 +105,24 @@
   .sev-filter.active-INFO { border-color: var(--green); color: var(--green); background: rgba(62,207,142,0.08); }
   .sev-filter.active-WARNING { border-color: var(--yellow); color: var(--yellow); background: rgba(245,200,66,0.08); }
   .sev-filter.active-CRITICAL { border-color: var(--red); color: var(--red); background: rgba(245,66,78,0.08); }
+  .sev-filter.active-ERROR    { border-color: var(--red); color: var(--red); background: rgba(245,66,78,0.08); }
 
   /* ── Main layout ── */
-  .main { display: flex; flex: 1; overflow: hidden; height: calc(100vh - 120px); }
+  .main { display: flex; flex: 1; overflow: hidden; min-height: 0; }
+
+  /* ── Resizer ── */
+  .resizer {
+    width: 5px; flex-shrink: 0; cursor: col-resize;
+    background: var(--border);
+    transition: background 0.15s;
+    position: relative; z-index: 1;
+  }
+  .resizer:hover, .resizer.dragging { background: var(--accent); }
 
   /* ── Entry list ── */
   .entry-list {
     width: 420px; flex-shrink: 0;
-    overflow-y: auto; border-right: 1px solid var(--border);
+    overflow-y: auto;
     scrollbar-width: thin; scrollbar-color: var(--border2) transparent;
   }
 
@@ -142,6 +149,7 @@
   .sev-INFO    { background: rgba(62,207,142,0.12); color: var(--green); border: 1px solid rgba(62,207,142,0.25); }
   .sev-WARNING { background: rgba(245,200,66,0.12); color: var(--yellow); border: 1px solid rgba(245,200,66,0.25); }
   .sev-CRITICAL{ background: rgba(245,66,78,0.12);  color: var(--red);    border: 1px solid rgba(245,66,78,0.25); }
+  .sev-ERROR   { background: rgba(245,66,78,0.12);  color: var(--red);    border: 1px solid rgba(245,66,78,0.25); }
 
   .card-count { margin-left: auto; font-size: 11px; color: var(--text-dim); }
   .card-count span { color: var(--text); font-weight: 600; }
@@ -231,7 +239,7 @@
   .btn-add:hover { border-color: var(--accent); color: var(--accent); }
 
   /* Actions */
-  .action-bar { display: flex; gap: 10px; margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--border); }
+  .action-bar { display: flex; gap: 10px; margin-bottom: 28px; padding-bottom: 20px; border-bottom: 1px solid var(--border); }
 
   .btn-save {
     background: var(--accent); color: #fff; border: none;
@@ -239,8 +247,9 @@
     font-family: var(--mono); font-size: 12px; font-weight: 600;
     transition: all 0.15s; box-shadow: 0 0 20px var(--accent-glow);
   }
-  .btn-save:hover { background: #6b91ff; box-shadow: 0 0 30px var(--accent-glow); }
-  .btn-save:active { transform: scale(0.98); }
+  .btn-save:hover:not(:disabled) { background: #6b91ff; box-shadow: 0 0 30px var(--accent-glow); }
+  .btn-save:active:not(:disabled) { transform: scale(0.98); }
+  .btn-save:disabled { opacity: 0.38; cursor: not-allowed; box-shadow: none; background: var(--surface2); color: var(--text-dim); border: 1px solid var(--border2); }
 
   .btn-reset {
     background: none; border: 1px solid var(--border2); color: var(--text-dim);
@@ -248,6 +257,21 @@
     font-family: var(--mono); font-size: 12px; transition: all 0.15s;
   }
   .btn-reset:hover { border-color: var(--text-dim); color: var(--text); }
+
+  .btn-delete {
+    background: none; border: 1px solid rgba(245,66,78,0.35); color: var(--red);
+    padding: 10px 18px; border-radius: var(--radius); cursor: pointer;
+    font-family: var(--mono); font-size: 12px; transition: all 0.15s;
+  }
+  .btn-delete:hover { background: rgba(245,66,78,0.1); border-color: var(--red); }
+
+  .btn-nav {
+    background: none; border: 1px solid var(--border2); color: var(--text-dim);
+    padding: 10px 16px; border-radius: var(--radius); cursor: pointer;
+    font-family: var(--mono); font-size: 12px; transition: all 0.15s;
+  }
+  .btn-nav:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  .btn-nav:disabled { opacity: 0.35; cursor: not-allowed; }
 
   /* Confidence slider */
   .conf-field { display: flex; flex-direction: column; gap: 5px; }
@@ -294,6 +318,24 @@
   }
   #toast.show { opacity: 1; transform: translateY(0); }
   #toast .t-icon { font-size: 15px; }
+  #toast.success { border-color: rgba(62,207,142,0.4); }
+  #toast.success .t-icon { color: var(--green); }
+  #toast.error { border-color: rgba(245,66,78,0.5); }
+  #toast.error .t-icon { color: var(--red); }
+
+  .offline-bar {
+    display: none; background: rgba(245,66,78,0.07);
+    border-bottom: 1px solid rgba(245,66,78,0.25);
+    color: var(--red); padding: 9px 32px; font-size: 11px;
+    align-items: center; gap: 10px; letter-spacing: 0.03em;
+  }
+  .offline-bar.show { display: flex; }
+  .offline-bar .retry-btn {
+    margin-left: auto; background: none; border: 1px solid rgba(245,66,78,0.4);
+    color: var(--red); padding: 4px 12px; border-radius: 4px;
+    cursor: pointer; font-family: var(--mono); font-size: 10px; transition: all 0.15s;
+  }
+  .offline-bar .retry-btn:hover { background: rgba(245,66,78,0.12); border-color: var(--red); }
 </style>
 </head>
 <body>
@@ -303,15 +345,21 @@
     <h1>LogWatcher <span style="color:var(--accent)">KB Editor</span></h1>
     <p>by DFT.one</p>
   </div>
-  <div class="header-right">
-    <div id="save-status"><div class="dot"></div> Saved</div>
-  </div>
+  <div class="header-right"></div>
 </header>
+
+<div class="offline-bar" id="offline-bar">
+  <span>⚠</span> Backend unreachable — changes cannot be saved
+  <button class="retry-btn" onclick="retryLoad()">Retry</button>
+</div>
 
 <div class="toolbar">
   <span class="toolbar-label">Sort by</span>
-  <button class="sort-btn active" data-field="id" onclick="setSort('id')">
-    # ID <span class="sort-arrow" id="arrow-id">↑</span>
+  <button class="sort-btn active" data-field="original_message" onclick="setSort('original_message')">
+    Message <span class="sort-arrow" id="arrow-original_message">↑</span>
+  </button>
+  <button class="sort-btn" data-field="id" onclick="setSort('id')">
+    # ID <span class="sort-arrow" id="arrow-id"></span>
   </button>
   <button class="sort-btn" data-field="count" onclick="setSort('count')">
     Count <span class="sort-arrow" id="arrow-count"></span>
@@ -328,11 +376,14 @@
     <button class="sev-filter" data-sev="INFO" onclick="toggleFilter('INFO')">INFO</button>
     <button class="sev-filter" data-sev="WARNING" onclick="toggleFilter('WARNING')">WARNING</button>
     <button class="sev-filter" data-sev="CRITICAL" onclick="toggleFilter('CRITICAL')">CRITICAL</button>
+    <button class="sev-filter" data-sev="ERROR" onclick="toggleFilter('ERROR')">ERROR</button>
+    <input class="search-input" id="search-input" type="text" placeholder="Search entries…" oninput="setSearch(this.value)">
   </div>
 </div>
 
 <div class="main">
   <div class="entry-list" id="entry-list"></div>
+  <div class="resizer" id="resizer"></div>
   <div class="detail-panel" id="detail-panel">
     <div class="no-selection">
       <div class="icon">⟡</div>
@@ -347,14 +398,45 @@
 let entries = [];
 let selected = null;
 let originalEntry = null;
-let sortField = 'id';
+let sortField = 'original_message';
 let sortDir = 1;
 let activeFilters = new Set();
+let searchText = '';
+let displayedEntries = [];
+
+function setOffline(offline) {
+  document.getElementById('offline-bar').classList.toggle('show', offline);
+  if (offline) {
+    document.getElementById('entry-list').innerHTML =
+      '<div class="empty-list" style="color:var(--red)">⚠ Cannot reach backend</div>';
+  }
+}
+
+async function retryLoad() {
+  setOffline(false);
+  await load();
+}
+
+function showToast(msg, isError) {
+  const t = document.getElementById('toast');
+  document.getElementById('toast-msg').textContent = msg;
+  t.querySelector('.t-icon').textContent = isError ? '⚠' : '✓';
+  t.classList.toggle('error', isError);
+  t.classList.toggle('success', !isError);
+  t.classList.add('show');
+  setTimeout(() => { t.classList.remove('show', 'error', 'success'); }, isError ? 3500 : 2200);
+}
 
 async function load() {
-  const res = await fetch('/api/entries');
-  entries = await res.json();
-  renderList();
+  try {
+    const res = await fetch('/api/entries');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    entries = await res.json();
+    setOffline(false);
+    renderList();
+  } catch {
+    setOffline(true);
+  }
 }
 
 function getConfColor(v) {
@@ -371,12 +453,25 @@ function renderList() {
     data = data.filter(e => activeFilters.has(e.severity));
   }
 
+  if (searchText) {
+    const q = searchText.toLowerCase();
+    data = data.filter(e =>
+      e.original_message.toLowerCase().includes(q) ||
+      e.pattern_message.toLowerCase().includes(q) ||
+      (e.analysis.reasoning || '').toLowerCase().includes(q) ||
+      (e.analysis.detected_entities || []).some(ent => ent.toLowerCase().includes(q)) ||
+      String(e.id).includes(q)
+    );
+  }
+
   data.sort((a, b) => {
     let av = sortField === 'confidence' ? a.analysis.confidence_score : a[sortField];
     let bv = sortField === 'confidence' ? b.analysis.confidence_score : b[sortField];
     if (typeof av === 'string') return sortDir * av.localeCompare(bv);
     return sortDir * (av - bv);
   });
+
+  displayedEntries = data;
 
   if (!data.length) {
     list.innerHTML = '<div class="empty-list">No entries match current filters.</div>';
@@ -413,11 +508,17 @@ function setSort(field) {
   document.querySelectorAll('.sort-btn').forEach(b => {
     b.classList.remove('active');
     const f = b.dataset.field;
-    document.getElementById('arrow-' + f).textContent = '';
+    const arrow = document.getElementById('arrow-' + f);
+    if (arrow) arrow.textContent = '';
   });
   const btn = document.querySelector(`[data-field="${field}"]`);
   btn.classList.add('active');
   document.getElementById('arrow-' + field).textContent = sortDir === 1 ? '↑' : '↓';
+  renderList();
+}
+
+function setSearch(val) {
+  searchText = val.trim();
   renderList();
 }
 
@@ -444,12 +545,25 @@ function renderDetail() {
   if (!e) return;
   const conf = e.analysis.confidence_score;
   const confColor = getConfColor(conf);
+  const currentIdx = displayedEntries.findIndex(x => x.id === e.id);
+  const hasPrev = currentIdx > 0;
+  const hasNext = currentIdx !== -1 && currentIdx < displayedEntries.length - 1;
 
   const panel = document.getElementById('detail-panel');
   panel.innerHTML = `
     <div class="detail-header">
       <h2>Entry #${e.id}</h2>
       <span class="sev-badge sev-${e.severity}">${e.severity}</span>
+    </div>
+
+    <div class="action-bar">
+      <button class="btn-save" id="btn-save" onclick="saveEntry()">Save Changes</button>
+      <button class="btn-reset" onclick="resetEntry()">Reset</button>
+      <button class="btn-delete" onclick="deleteEntry()">Delete</button>
+      <div style="margin-left:auto;display:flex;gap:8px;">
+        <button class="btn-nav" onclick="navEntry(-1)" ${!hasPrev ? 'disabled' : ''}>← Prev</button>
+        <button class="btn-nav" onclick="navEntry(1)" ${!hasNext ? 'disabled' : ''}>Next →</button>
+      </div>
     </div>
 
     <div class="section">
@@ -460,13 +574,14 @@ function renderDetail() {
           <select id="f-severity" onchange="updateField('severity', this.value)">
             <option ${e.severity==='INFO'?'selected':''}>INFO</option>
             <option ${e.severity==='WARNING'?'selected':''}>WARNING</option>
+            <option ${e.severity==='ERROR'?'selected':''}>ERROR</option>
             <option ${e.severity==='CRITICAL'?'selected':''}>CRITICAL</option>
           </select>
         </div>
         <div class="count-field field">
           <label>Occurrence Count</label>
           <div class="count-input-wrap">
-            <input type="number" id="f-count" value="${e.count}" min="0" onchange="updateField('count', parseInt(this.value)||0)">
+            <input type="number" id="f-count" value="${e.count}" min="0" oninput="updateField('count', parseInt(this.value)||0)">
             <span class="count-unit">events</span>
           </div>
         </div>
@@ -478,11 +593,12 @@ function renderDetail() {
       <div class="field-grid full">
         <div class="field">
           <label>Original Message</label>
-          <textarea id="f-original" class="tall" onchange="updateField('original_message', this.value)">${escHtml(e.original_message)}</textarea>
+          <textarea id="f-original" class="tall" oninput="updateField('original_message', this.value); checkPatternMatch()">${escHtml(e.original_message)}</textarea>
         </div>
         <div class="field">
           <label>Pattern Message</label>
-          <textarea id="f-pattern" class="tall" onchange="updateField('pattern_message', this.value)">${escHtml(e.pattern_message)}</textarea>
+          <textarea id="f-pattern" class="tall" oninput="updateField('pattern_message', this.value); checkPatternMatch()">${escHtml(e.pattern_message)}</textarea>
+          <span id="pattern-match-status" style="font-size:10px;margin-top:5px;letter-spacing:0.04em;"></span>
         </div>
       </div>
     </div>
@@ -525,11 +641,39 @@ function renderDetail() {
       </div>
     </div>
 
-    <div class="action-bar">
-      <button class="btn-save" onclick="saveEntry()">Save Changes</button>
-      <button class="btn-reset" onclick="resetEntry()">Reset</button>
-    </div>
   `;
+  checkPatternMatch();
+}
+
+function checkPatternMatch() {
+  const btn = document.getElementById('btn-save');
+  const indicator = document.getElementById('pattern-match-status');
+  if (!btn || !selected) return;
+
+  const pattern = selected.pattern_message || '';
+  const message = selected.original_message || '';
+
+  let ok = false;
+  let label = '';
+  let color = '';
+
+  try {
+    const re = new RegExp(pattern);
+    if (re.test(message)) {
+      ok = true;
+      label = '✓ pattern matches';
+      color = 'var(--green)';
+    } else {
+      label = '✗ pattern does not match original message';
+      color = 'var(--orange)';
+    }
+  } catch (err) {
+    label = '✗ invalid regex — ' + err.message;
+    color = 'var(--red)';
+  }
+
+  btn.disabled = !ok;
+  if (indicator) { indicator.textContent = label; indicator.style.color = color; }
 }
 
 function updateField(key, value) {
@@ -554,41 +698,102 @@ function addEntity() {
   renderDetail();
 }
 
+function navEntry(dir) {
+  if (!selected || !displayedEntries.length) return;
+  const idx = displayedEntries.findIndex(e => e.id === selected.id);
+  if (idx === -1) return;
+  const newIdx = idx + dir;
+  if (newIdx < 0 || newIdx >= displayedEntries.length) return;
+  selectEntry(displayedEntries[newIdx].id);
+  const card = document.querySelector('.entry-card.selected');
+  if (card) card.scrollIntoView({ block: 'nearest' });
+}
+
 function resetEntry() {
   selected = JSON.parse(JSON.stringify(originalEntry));
   renderDetail();
   renderList();
 }
 
+async function deleteEntry() {
+  if (!selected) return;
+  if (!confirm(`Delete entry #${selected.id}? This cannot be undone.`)) return;
+  try {
+    const res = await fetch('/api/entries/' + selected.id, { method: 'DELETE' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    if (data.success) {
+      entries = entries.filter(e => e.id !== selected.id);
+      showToast('Entry #' + selected.id + ' deleted', false);
+      selected = null;
+      originalEntry = null;
+      renderList();
+      document.getElementById('detail-panel').innerHTML = `
+        <div class="no-selection">
+          <div class="icon">⟡</div>
+          <p>Select a log pattern from the list<br>to view and edit its details.</p>
+        </div>`;
+    }
+  } catch {
+    showToast('Could not reach backend — delete failed', true);
+  }
+}
+
 async function saveEntry() {
-  const res = await fetch('/api/entries/' + selected.id, {
-    method: 'PUT',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify(selected)
-  });
-  const data = await res.json();
-  if (data.success) {
-    const idx = entries.findIndex(e => e.id === selected.id);
-    entries[idx] = JSON.parse(JSON.stringify(selected));
-    originalEntry = JSON.parse(JSON.stringify(selected));
-    renderList();
-    renderDetail();
-    showSaved();
+  try {
+    const res = await fetch('/api/entries/' + selected.id, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(selected)
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    if (data.success) {
+      const idx = entries.findIndex(e => e.id === selected.id);
+      entries[idx] = JSON.parse(JSON.stringify(selected));
+      originalEntry = JSON.parse(JSON.stringify(selected));
+      renderList();
+      renderDetail();
+      showSaved();
+    }
+  } catch {
+    showToast('Could not reach backend — save failed', true);
   }
 }
 
 function showSaved() {
-  const s = document.getElementById('save-status');
-  s.classList.add('show');
-  setTimeout(() => s.classList.remove('show'), 2500);
-
-  const t = document.getElementById('toast');
-  document.getElementById('toast-msg').textContent = 'Entry #' + selected.id + ' saved successfully';
-  t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 2200);
+  showToast('Entry #' + selected.id + ' saved successfully', false);
 }
 
 load();
+
+(function() {
+  const resizer = document.getElementById('resizer');
+  const list = document.getElementById('entry-list');
+  let startX, startW;
+
+  resizer.addEventListener('mousedown', e => {
+    startX = e.clientX;
+    startW = list.offsetWidth;
+    resizer.classList.add('dragging');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    function onMove(e) {
+      const w = Math.max(180, Math.min(startW + e.clientX - startX, window.innerWidth - 300));
+      list.style.width = w + 'px';
+    }
+    function onUp() {
+      resizer.classList.remove('dragging');
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+})();
 </script>
 </body>
 </html>
