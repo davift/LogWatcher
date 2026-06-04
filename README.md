@@ -63,18 +63,17 @@ Grafana to visualize them.
 
 ![exporter dashboard](https://github.com/davift/LogWatcher/blob/main/image06.png)
 
-Import the dashboard template num: `25380`
-
-See https://grafana.com/grafana/dashboards/25380/
+Import the dashboard template num: `25380` (https://grafana.com/grafana/dashboards/25380-logwatcher/)
 
 ## Severity Levels
 
-| Level | Color | Trigger |
-|---|---|---|
-| CRITICAL | 🔴 Red | Auth failures, brute-force, unauthorized access |
-| ERROR | 🟠 Orange | Hardware/kernel issues |
-| WARNING | 🟡 Yellow | Connection errors, timeouts, crashes |
-| INFO | 🟢 Green | Routine status and noise |
+| Level | Trigger |
+|---|---|
+| CRITICAL | Auth failures, brute-force, unauthorized access. |
+| ERROR | Hardware/kernel issues. |
+| WARNING | Connection errors, timeouts, crashes. |
+| INFO | Routine status and noise. |
+| UNCLASSIFIED | Not matched in offline mode or AI failure. |
 
 ## KB Editor
 

@@ -15,3 +15,7 @@ ANTHROPIC_KEY=<your_anthropic_api_key_here>
 # Ollama
 OLLAMA_URL=http://192.168.1.101:11434/api/generate
 
+# Editor
+EDITOR_AUTH_USER=<USERNAME>
+EDITOR_AUTH_PASSWORD=<PASSWORD>
+
