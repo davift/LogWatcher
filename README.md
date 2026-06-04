@@ -63,6 +63,10 @@ Grafana to visualize them.
 
 ![exporter dashboard](https://github.com/davift/LogWatcher/blob/main/image06.png)
 
+Import the dashboard template num: `25380`
+
+See https://grafana.com/grafana/dashboards/25380/
+
 ## Severity Levels
 
 | Level | Color | Trigger |
