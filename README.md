@@ -1,5 +1,7 @@
 # LogWatcher
 
+![logs flowing](https://github.com/davift/LogWatcher/blob/main/image00.gif)
+
 An AI-powered log monitoring tool that analyzes entries in real time, classifies
 them by severity, and builds a local pattern knowledge base for instant, offline
 re-matching. So, the AI is only ever consulted once per unique log pattern.
