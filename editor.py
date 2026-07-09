@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 
+import hmac
 import json
 import os
+import sys
 from functools import wraps
 
 import dotenv
@@ -16,9 +18,12 @@ DATA_FILE = "known.jsonl"
 AUTH_USER = os.getenv("EDITOR_AUTH_USER", "admin")
 AUTH_PASSWORD = os.getenv("EDITOR_AUTH_PASSWORD", "")
 
+if not AUTH_PASSWORD:
+    sys.exit("EDITOR_AUTH_PASSWORD is not set. Refusing to start without a password.")
+
 
 def check_auth(username, password):
-    return username == AUTH_USER and password == AUTH_PASSWORD
+    return (hmac.compare_digest(username, AUTH_USER) and hmac.compare_digest(password, AUTH_PASSWORD))
 
 
 def require_auth(f):

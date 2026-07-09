@@ -49,9 +49,13 @@ ANTHROPIC_MODELS = [
     'claude-opus-4-7',   #2 Expensive but slower.
 ]
 INDEX=0 if len(sys.argv) <= 1 else int(sys.argv[1])
-MODEL = OLLAMA_MODELS[INDEX]
-OPENAI_MODEL = OPENAI_MODELS[INDEX]
-ANTHROPIC_MODEL = ANTHROPIC_MODELS[INDEX]
+
+def _pick(models):
+    return models[INDEX] if 0 <= INDEX < len(models) else models[0]
+
+MODEL = _pick(OLLAMA_MODELS)
+OPENAI_MODEL = _pick(OPENAI_MODELS)
+ANTHROPIC_MODEL = _pick(ANTHROPIC_MODELS)
 
 KNOWN_PATTERNS_FILE = "known.jsonl"
 SCHEMA_FILE = 'schema.json'
